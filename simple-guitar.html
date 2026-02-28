@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Guitar (Mouse Control)</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        #container {
+            position: relative;
+            width: 1280px;
+            height: 720px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        #info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            text-shadow: 2px 2px 4px black;
+        }
+        h1 { font-size: 28px; margin-bottom: 10px; }
+        #instructions {
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 10px;
+        }
+        #chord-display {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px 30px;
+            border-radius: 8px;
+            color: #4ade80;
+            font-size: 24px;
+            font-weight: bold;
+            border: 2px solid #4ade80;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <canvas id="canvas" width="1280" height="720"></canvas>
+        <div id="info">
+            <h1>🎸 Simple Guitar (Mouse Control)</h1>
+            <div id="instructions">
+                <p><strong>Click on frets to play notes</strong></p>
+                <p>Left click = Press fret</p>
+                <p>Move mouse across strings while holding = Strum</p>
+                <p style="color: #fbbf24; margin-top: 10px;">⚠️ Network issue detected - running in offline mode</p>
+                <p style="font-size: 12px; color: #9ca3af;">Using Web Audio API oscillators (no samples)</p>
+            </div>
+        </div>
+        <div id="chord-display">Click to play!</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Guitar setup
+        const guitar = {
+            x: 100,
+            y: 480,
+            neckWidth: 700,
+            bodyWidth: 380,
+            height: 200,
+            numFrets: 12,
+            numStrings: 6,
+            strings: [],
+            frets: []
+        };
+
+        // Initialize strings
+        const stringFreqs = [82.41, 110.00, 146.83, 196.00, 246.94, 329.63]; // E2, A2, D3, G3, B3, E4
+        const stringSpacing = guitar.height / (guitar.numStrings + 1);
+        for (let i = 0; i < guitar.numStrings; i++) {
+            guitar.strings.push({
+                index: i,
+                y: guitar.y + stringSpacing * (i + 1),
+                baseFreq: stringFreqs[i],
+                active: false
+            });
+        }
+
+        // Initialize frets
+        const fretSpacing = guitar.neckWidth / guitar.numFrets;
+        for (let i = 0; i <= guitar.numFrets; i++) {
+            guitar.frets.push({
+                index: i,
+                x: guitar.x + fretSpacing * i
+            });
+        }
+
+        // Audio context
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        let activeOscillators = new Map();
+
+        // Mouse state
+        let mouseDown = false;
+        let mouseX = 0;
+        let mouseY = 0;
+        let currentFret = 0;
+
+        // Event handlers
+        canvas.addEventListener('mousedown', (e) => {
+            audioCtx.resume(); // Resume audio context on user interaction
+            mouseDown = true;
+            updateMouse(e);
+            playNotes();
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            mouseDown = false;
+            stopAllNotes();
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            updateMouse(e);
+            if (mouseDown) {
+                playNotes();
+            }
+        });
+
+        function updateMouse(e) {
+            const rect = canvas.getBoundingClientRect();
+            mouseX = e.clientX - rect.left;
+            mouseY = e.clientY - rect.top;
+
+            // Find current fret
+            currentFret = 0;
+            for (let i = 0; i < guitar.frets.length - 1; i++) {
+                if (mouseX >= guitar.frets[i].x && mouseX < guitar.frets[i + 1].x) {
+                    currentFret = i;
+                    break;
+                }
+            }
+        }
+
+        function playNotes() {
+            // Reset active strings
+            guitar.strings.forEach(s => s.active = false);
+
+            // Check which strings are being touched
+            const touchRadius = 30;
+            for (const string of guitar.strings) {
+                if (Math.abs(mouseY - string.y) < touchRadius) {
+                    string.active = true;
+                    playNote(string.index, currentFret);
+                }
+            }
+
+            // Update chord display
+            const activeCount = guitar.strings.filter(s => s.active).length;
+            document.getElementById('chord-display').textContent = 
+                activeCount > 0 ? `Fret ${currentFret} (${activeCount} strings)` : 'Click to play!';
+        }
+
+        function playNote(stringIndex, fretIndex) {
+            const key = `${stringIndex}-${fretIndex}`;
+            
+            // Stop previous note for this string
+            guitar.strings.forEach((_, idx) => {
+                const oldKey = `${idx}-${fretIndex}`;
+                if (activeOscillators.has(oldKey)) {
+                    const old = activeOscillators.get(oldKey);
+                    old.gain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.015);
+                    setTimeout(() => {
+                        old.osc.stop();
+                        activeOscillators.delete(oldKey);
+                    }, 100);
+                }
+            });
+
+            // Calculate frequency
+            const baseFreq = guitar.strings[stringIndex].baseFreq;
+            const freq = baseFreq * Math.pow(2, fretIndex / 12);
+
+            // Create oscillator
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            
+            osc.type = 'triangle'; // Closer to guitar sound than sine
+            osc.frequency.value = freq;
+            
+            gainNode.gain.value = 0;
+            gainNode.gain.setTargetAtTime(0.3, audioCtx.currentTime, 0.015);
+            
+            osc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            osc.start();
+            activeOscillators.set(key, { osc, gain: gainNode });
+        }
+
+        function stopAllNotes() {
+            activeOscillators.forEach((node, key) => {
+                node.gain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.015);
+                setTimeout(() => {
+                    node.osc.stop();
+                    activeOscillators.delete(key);
+                }, 100);
+            });
+        }
+
+        // Render loop
+        function render() {
+            // Clear
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw guitar neck
+            ctx.fillStyle = 'rgba(139, 69, 19, 0.7)';
+            ctx.fillRect(guitar.x, guitar.y, guitar.neckWidth, guitar.height);
+
+            // Draw frets
+            ctx.strokeStyle = 'rgba(192, 192, 192, 0.8)';
+            ctx.lineWidth = 3;
+            for (const fret of guitar.frets) {
+                ctx.beginPath();
+                ctx.moveTo(fret.x, guitar.y);
+                ctx.lineTo(fret.x, guitar.y + guitar.height);
+                ctx.stroke();
+
+                // Fret numbers
+                if (fret.index > 0) {
+                    ctx.fillStyle = 'white';
+                    ctx.font = '12px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(fret.index, fret.x, guitar.y - 5);
+                }
+            }
+
+            // Draw strings
+            for (const string of guitar.strings) {
+                ctx.strokeStyle = string.active ? 'rgba(74, 222, 128, 0.9)' : 'rgba(200, 200, 200, 0.8)';
+                ctx.lineWidth = string.active ? 4 : 2;
+                
+                ctx.beginPath();
+                ctx.moveTo(guitar.x, string.y);
+                ctx.lineTo(guitar.x + guitar.neckWidth, string.y);
+                ctx.stroke();
+
+                // String labels
+                ctx.fillStyle = 'white';
+                ctx.font = '12px Arial';
+                ctx.textAlign = 'right';
+                ctx.fillText(`${Math.round(string.baseFreq)}Hz`, guitar.x - 10, string.y + 4);
+            }
+
+            // Draw guitar body
+            ctx.fillStyle = 'rgba(101, 67, 33, 0.7)';
+            ctx.fillRect(guitar.x + guitar.neckWidth, guitar.y, guitar.bodyWidth, guitar.height);
+
+            // Draw mouse cursor
+            if (mouseDown) {
+                ctx.strokeStyle = 'rgba(74, 222, 128, 0.5)';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(mouseX, mouseY, 30, 0, Math.PI * 2);
+                ctx.stroke();
+
+                ctx.fillStyle = 'rgba(255, 255, 0, 0.8)';
+                ctx.beginPath();
+                ctx.arc(mouseX, mouseY, 6, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            requestAnimationFrame(render);
+        }
+
+        render();
+    </script>
+</body>
+</html>

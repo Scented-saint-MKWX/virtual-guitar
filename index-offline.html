@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Virtual Air Guitar - CV + Web Audio</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        #app-container {
+            position: relative;
+            width: 1280px;
+            height: 720px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        /* Canvas Layering System */
+        .canvas-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        #video-canvas {
+            z-index: 1;
+        }
+
+        #guitar-canvas {
+            z-index: 2;
+            pointer-events: none;
+        }
+
+        #hands-canvas {
+            z-index: 3;
+            pointer-events: none;
+        }
+
+        /* UI Overlay */
+        #ui-overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 4;
+            color: white;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+            pointer-events: none;
+        }
+
+        #ui-overlay h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+            font-weight: 700;
+            letter-spacing: 1px;
+        }
+
+        #status {
+            font-size: 14px;
+            padding: 8px 12px;
+            background: rgba(0, 0, 0, 0.6);
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
+
+        #fps {
+            font-size: 12px;
+            color: #4ade80;
+        }
+
+        /* Control Panel */
+        #control-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 4;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 8px;
+            color: white;
+            min-width: 200px;
+        }
+
+        #control-panel h3 {
+            margin-bottom: 15px;
+            font-size: 16px;
+            border-bottom: 2px solid #4ade80;
+            padding-bottom: 8px;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 12px;
+            color: #cbd5e1;
+        }
+
+        .control-group select,
+        .control-group input {
+            width: 100%;
+            padding: 6px;
+            border-radius: 4px;
+            border: none;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            font-size: 12px;
+        }
+
+        .control-group input[type="range"] {
+            cursor: pointer;
+        }
+
+        button {
+            width: 100%;
+            padding: 10px;
+            margin-top: 10px;
+            background: #4ade80;
+            border: none;
+            border-radius: 6px;
+            color: black;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        button:hover {
+            background: #22c55e;
+            transform: translateY(-2px);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        /* Chord Display */
+        #chord-display {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 4;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px 30px;
+            border-radius: 8px;
+            color: #4ade80;
+            font-size: 24px;
+            font-weight: bold;
+            min-width: 150px;
+            text-align: center;
+            border: 2px solid #4ade80;
+        }
+
+        /* Loading Screen */
+        #loading {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+        }
+
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 4px solid #4ade80;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div id="app-container">
+        <!-- Layer 1: Video Feed (Mirrored) -->
+        <canvas id="video-canvas" class="canvas-layer" width="1280" height="720"></canvas>
+        
+        <!-- Layer 2: Virtual Guitar UI -->
+        <canvas id="guitar-canvas" class="canvas-layer" width="1280" height="720"></canvas>
+        
+        <!-- Layer 3: Hand Landmarks -->
+        <canvas id="hands-canvas" class="canvas-layer" width="1280" height="720"></canvas>
+
+        <!-- UI Overlay -->
+        <div id="ui-overlay">
+            <h1>🎸 Virtual Air Guitar (Offline)</h1>
+            <div id="status">Initializing...</div>
+            <div id="fps">FPS: --</div>
+        </div>
+
+        <!-- Control Panel -->
+        <div id="control-panel">
+            <h3>Settings</h3>
+            
+            <div class="control-group">
+                <label>Tuning</label>
+                <select id="tuning-select">
+                    <option value="standard">Standard E</option>
+                    <option value="dropD">Drop D</option>
+                    <option value="dadgad">DADGAD</option>
+                    <option value="halfStep">Half Step Down</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label>Sensitivity</label>
+                <input type="range" id="sensitivity" min="1" max="10" value="5" step="1">
+                <span id="sensitivity-value">5</span>
+            </div>
+
+            <div class="control-group">
+                <label>Strum Threshold</label>
+                <input type="range" id="strum-threshold" min="0.1" max="1.0" value="0.3" step="0.1">
+                <span id="strum-value">0.3</span>
+            </div>
+
+            <button id="calibrate-btn">Calibrate Position</button>
+        </div>
+
+        <!-- Chord Display -->
+        <div id="chord-display">--</div>
+
+        <!-- Loading Screen -->
+        <div id="loading">
+            <div class="spinner"></div>
+            <p>Loading MediaPipe & Audio Samples...</p>
+        </div>
+    </div>
+
+    <!-- MediaPipe Hands (LOCAL) -->
+    <script src="libs/mediapipe/camera_utils.js"></script>
+    <script src="libs/mediapipe/drawing_utils.js"></script>
+    <script src="libs/mediapipe/hands.js"></script>
+    
+    <!-- Tone.js (LOCAL) -->
+    <script src="libs/tone/Tone.js"></script>
+
+    <!-- Main Application -->
+    <script src="app-offline.js"></script>
+</body>
+</html>

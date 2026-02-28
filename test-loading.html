@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loading Test - Virtual Air Guitar</title>
+    <style>
+        body {
+            font-family: monospace;
+            background: #1a1a1a;
+            color: #4ade80;
+            padding: 20px;
+        }
+        .status { padding: 10px; margin: 5px 0; border-radius: 4px; }
+        .success { background: rgba(74, 222, 128, 0.2); }
+        .error { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+        .pending { background: rgba(251, 191, 36, 0.2); color: #fbbf24; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Loading Diagnostics</h1>
+    <div id="results"></div>
+
+    <!-- MediaPipe Hands -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    
+    <!-- Tone.js -->
+    <script src="https://cdn.jsdelivr.net/npm/tone@14.8.49/build/Tone.js"></script>
+
+    <script>
+        const results = document.getElementById('results');
+        
+        function log(message, type = 'pending') {
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.textContent = message;
+            results.appendChild(div);
+        }
+
+        // Test 1: Check if libraries loaded
+        setTimeout(() => {
+            log('Testing library loading...', 'pending');
+            
+            if (typeof Hands !== 'undefined') {
+                log('✓ MediaPipe Hands loaded', 'success');
+            } else {
+                log('✗ MediaPipe Hands NOT loaded', 'error');
+            }
+
+            if (typeof Camera !== 'undefined') {
+                log('✓ MediaPipe Camera loaded', 'success');
+            } else {
+                log('✗ MediaPipe Camera NOT loaded', 'error');
+            }
+
+            if (typeof Tone !== 'undefined') {
+                log('✓ Tone.js loaded', 'success');
+            } else {
+                log('✗ Tone.js NOT loaded', 'error');
+            }
+
+            // Test 2: Check camera access
+            log('Testing camera access...', 'pending');
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(() => {
+                    log('✓ Camera access granted', 'success');
+                })
+                .catch((err) => {
+                    log(`✗ Camera access failed: ${err.message}`, 'error');
+                });
+
+            // Test 3: Test MediaPipe initialization
+            if (typeof Hands !== 'undefined') {
+                try {
+                    log('Testing MediaPipe initialization...', 'pending');
+                    const hands = new Hands({
+                        locateFile: (file) => {
+                            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+                        }
+                    });
+                    log('✓ MediaPipe Hands initialized', 'success');
+                } catch (e) {
+                    log(`✗ MediaPipe initialization failed: ${e.message}`, 'error');
+                }
+            }
+
+            // Test 4: Test Tone.js
+            if (typeof Tone !== 'undefined') {
+                try {
+                    log('Testing Tone.js...', 'pending');
+                    const synth = new Tone.Synth().toDestination();
+                    log('✓ Tone.js initialized', 'success');
+                } catch (e) {
+                    log(`✗ Tone.js failed: ${e.message}`, 'error');
+                }
+            }
+
+        }, 2000); // Wait 2 seconds for scripts to load
+    </script>
+</body>
+</html>

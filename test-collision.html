@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Collision Detection Test - Virtual Air Guitar</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: monospace;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #4ade80;
+        }
+        
+        #canvas {
+            display: block;
+            margin: 20px auto;
+            background: #000;
+            border: 2px solid #4ade80;
+            cursor: crosshair;
+        }
+        
+        .info {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+        }
+        
+        .info h3 {
+            color: #4ade80;
+            margin-top: 0;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .stat {
+            background: rgba(74, 222, 128, 0.2);
+            padding: 10px;
+            border-radius: 4px;
+            text-align: center;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #9ca3af;
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            color: #4ade80;
+            font-weight: bold;
+        }
+        
+        code {
+            background: rgba(0, 0, 0, 0.5);
+            padding: 2px 6px;
+            border-radius: 3px;
+            color: #fbbf24;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎯 Collision Detection Test</h1>
+    
+    <canvas id="canvas" width="800" height="600"></canvas>
+    
+    <div class="info">
+        <h3>Interactive Test</h3>
+        <p>
+            <strong>Click and drag</strong> on the canvas to simulate a fingertip position.
+            The radial hitbox will detect all strings within range.
+        </p>
+        
+        <h4>Algorithm:</h4>
+        <pre><code>for each string:
+    distance = abs(fingertip.y - string.y)
+    if distance < fingerRadius:
+        string is PRESSED
+</code></pre>
+        
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-label">Mouse X</div>
+                <div class="stat-value" id="mouseX">0</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Mouse Y</div>
+                <div class="stat-value" id="mouseY">0</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Strings Pressed</div>
+                <div class="stat-value" id="stringsPressed">0</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Finger Radius</div>
+                <div class="stat-value" id="radiusValue">25</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Fret Index</div>
+                <div class="stat-value" id="fretIndex">--</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Mode</div>
+                <div class="stat-value" id="mode">Hover</div>
+            </div>
+        </div>
+        
+        <h4>Controls:</h4>
+        <ul>
+            <li><strong>Click + Drag</strong>: Move fingertip</li>
+            <li><strong>Scroll</strong>: Adjust finger radius</li>
+            <li><strong>Spacebar</strong>: Toggle pinch mode</li>
+        </ul>
+    </div>
+    
+    <script>
+        const canvas = document.getElementById('canvas')
+        const ctx = canvas.getContext('2d')
+        
+        // Guitar configuration
+        const guitar = {
+            x: 50,
+            y: 150,
+            width: 700,
+            height: 300,
+            numStrings: 6,
+            numFrets: 12,
+            strings: [],
+            frets: []
+        }
+        
+        // Initialize strings
+        const stringSpacing = guitar.height / (guitar.numStrings + 1)
+        for (let i = 0; i < guitar.numStrings; i++) {
+            guitar.strings.push({
+                index: i,
+                y: guitar.y + stringSpacing * (i + 1),
+                pressed: false
+            })
+        }
+        
+        // Initialize frets
+        const fretSpacing = guitar.width / guitar.numFrets
+        for (let i = 0; i <= guitar.numFrets; i++) {
+            guitar.frets.push({
+                index: i,
+                x: guitar.x + fretSpacing * i
+            })
+        }
+        
+        // Collision parameters
+        let fingerPos = { x: 400, y: 300 }
+        let fingerRadius = 25
+        let mouseDown = false
+        let pinchMode = false
+        
+        // Event handlers
+        canvas.addEventListener('mousedown', (e) => {
+            mouseDown = true
+            updateFingerPos(e)
+        })
+        
+        canvas.addEventListener('mouseup', () => {
+            mouseDown = false
+        })
+        
+        canvas.addEventListener('mousemove', (e) => {
+            updateFingerPos(e)
+        })
+        
+        canvas.addEventListener('wheel', (e) => {
+            e.preventDefault()
+            fingerRadius = Math.max(5, Math.min(100, fingerRadius + (e.deltaY > 0 ? -5 : 5)))
+            document.getElementById('radiusValue').textContent = fingerRadius
+        })
+        
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                pinchMode = !pinchMode
+                document.getElementById('mode').textContent = pinchMode ? 'PINCH' : 'Hover'
+            }
+        })
+        
+        function updateFingerPos(e) {
+            const rect = canvas.getBoundingClientRect()
+            fingerPos.x = e.clientX - rect.left
+            fingerPos.y = e.clientY - rect.top
+            
+            document.getElementById('mouseX').textContent = Math.round(fingerPos.x)
+            document.getElementById('mouseY').textContent = Math.round(fingerPos.y)
+        }
+        
+        // Collision detection
+        function detectCollisions() {
+            let pressedCount = 0
+            
+            // Reset all strings
+            guitar.strings.forEach(s => s.pressed = false)
+            
+            // Only detect if mouse is down or pinch mode
+            if (mouseDown || pinchMode) {
+                // Find fret
+                let currentFret = -1
+                for (let i = 0; i < guitar.frets.length - 1; i++) {
+                    if (fingerPos.x >= guitar.frets[i].x && fingerPos.x < guitar.frets[i + 1].x) {
+                        currentFret = i
+                        break
+                    }
+                }
+                document.getElementById('fretIndex').textContent = currentFret >= 0 ? currentFret : '--'
+                
+                // Check each string
+                for (const string of guitar.strings) {
+                    const distance = Math.abs(fingerPos.y - string.y)
+                    
+                    if (distance < fingerRadius) {
+                        string.pressed = true
+                        pressedCount++
+                    }
+                }
+            }
+            
+            document.getElementById('stringsPressed').textContent = pressedCount
+        }
+        
+        // Rendering
+        function render() {
+            // Clear
+            ctx.fillStyle = '#000'
+            ctx.fillRect(0, 0, canvas.width, canvas.height)
+            
+            // Draw guitar neck
+            ctx.fillStyle = 'rgba(139, 69, 19, 0.5)'
+            ctx.fillRect(guitar.x, guitar.y, guitar.width, guitar.height)
+            
+            // Draw frets
+            ctx.strokeStyle = 'rgba(192, 192, 192, 0.5)'
+            ctx.lineWidth = 2
+            for (const fret of guitar.frets) {
+                ctx.beginPath()
+                ctx.moveTo(fret.x, guitar.y)
+                ctx.lineTo(fret.x, guitar.y + guitar.height)
+                ctx.stroke()
+            }
+            
+            // Draw strings
+            for (const string of guitar.strings) {
+                ctx.strokeStyle = string.pressed ? 'rgba(74, 222, 128, 0.9)' : 'rgba(200, 200, 200, 0.7)'
+                ctx.lineWidth = string.pressed ? 4 : 2
+                
+                ctx.beginPath()
+                ctx.moveTo(guitar.x, string.y)
+                ctx.lineTo(guitar.x + guitar.width, string.y)
+                ctx.stroke()
+                
+                // String labels
+                ctx.fillStyle = 'white'
+                ctx.font = '14px monospace'
+                ctx.fillText(`S${string.index + 1}`, guitar.x - 30, string.y + 5)
+            }
+            
+            // Draw fingertip
+            if (mouseDown || pinchMode) {
+                // Radial hitbox
+                ctx.strokeStyle = 'rgba(74, 222, 128, 0.5)'
+                ctx.lineWidth = 2
+                ctx.beginPath()
+                ctx.arc(fingerPos.x, fingerPos.y, fingerRadius, 0, Math.PI * 2)
+                ctx.stroke()
+                
+                // Fingertip
+                ctx.fillStyle = pinchMode ? 'rgba(255, 255, 0, 0.9)' : 'rgba(255, 255, 0, 0.5)'
+                ctx.beginPath()
+                ctx.arc(fingerPos.x, fingerPos.y, 8, 0, Math.PI * 2)
+                ctx.fill()
+                
+                // Draw distance lines to strings within hitbox
+                ctx.strokeStyle = 'rgba(74, 222, 128, 0.3)'
+                ctx.lineWidth = 1
+                for (const string of guitar.strings) {
+                    const distance = Math.abs(fingerPos.y - string.y)
+                    if (distance < fingerRadius) {
+                        ctx.beginPath()
+                        ctx.moveTo(fingerPos.x, fingerPos.y)
+                        ctx.lineTo(fingerPos.x, string.y)
+                        ctx.stroke()
+                        
+                        // Distance label
+                        ctx.fillStyle = '#4ade80'
+                        ctx.font = '10px monospace'
+                        ctx.fillText(`${Math.round(distance)}px`, fingerPos.x + 10, (fingerPos.y + string.y) / 2)
+                    }
+                }
+            }
+            
+            // Instructions
+            if (!mouseDown && !pinchMode) {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.5)'
+                ctx.font = '16px monospace'
+                ctx.textAlign = 'center'
+                ctx.fillText('Click and drag to test collision detection', canvas.width / 2, 50)
+                ctx.fillText('Scroll to adjust radius | Spacebar to toggle pinch', canvas.width / 2, 75)
+                ctx.textAlign = 'left'
+            }
+        }
+        
+        // Animation loop
+        function animate() {
+            detectCollisions()
+            render()
+            requestAnimationFrame(animate)
+        }
+        
+        animate()
+    </script>
+</body>
+</html>
